@@ -168,8 +168,11 @@ function main(){
     --columns=2 \
     --field=" Screenshooter:":CB "^scrot!maim" \
     --field="Upload to host:":CB ${dialog_list} \
+    --field=:LBL \
+    --field="  Show cursor":CHK "TRUE" \
     --field="           Region to capture:":CB "^Entire screen!Active window!Select area" \
-    --field="  Delay before capturing: ":NUM "2!1..20!1!!"  ) 2>/dev/null
+    --field="  Delay before capturing: ":NUM "2!1..20!1!!" \
+    --field=:LBL  ) 2>/dev/null
     
     
     return=$?

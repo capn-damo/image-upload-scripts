@@ -4,7 +4,7 @@
 
 ########################################################################
 #
-### REQUIRES:  yad, jq, xprop, wmctrl, wget, curl, scrot, xdotool,
+### REQUIRES:  yad, jq, xprop, wmctrl, wget, curl, maim, xdotool,
 #               convert(in imagemagick package), gio(in gvfs package)
 #
 ########################################################################
@@ -17,11 +17,12 @@ USR_CFG_DIR="$HOME/.config/scrotcloud"
 SETTINGS_FILE="${USR_CFG_DIR}/settings.conf"
 SCRIPT=$(basename "$0")
 export IMG_VIEWER="x-www-browser"   # used by show_image()
+declare CURSOR=1
 
 #export IMG_VIEWER
 #### YAD ###
 DIALOG="yad --center --borders=20 --window-icon=distributor-logo-bunsenlabs --fixed"
-TITLE="--title=Image BBCode"
+TITLE="--title=scrot.cloud BBCode"
 T="--text="
 DELETE="--button=Delete:2"
 CLOSE="--button=gtk-close:1"
@@ -30,7 +31,7 @@ OK="--button=OK:0"
 
 ### required programs ###
 declare -a APPS
-APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" "xdotool" "convert" )
+APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "gio" "xdotool" "convert" "maim" )
 
 ### FUNCTIONS  #########################################################
 ### Get script args ###
@@ -42,9 +43,9 @@ function getargs(){
                             ;;
             -s | --select)  SCROT="${SCREENSHOT_SELECT_COMMAND}"
                             ;;
-            -w | --window)  SCROT="${SCREENSHOT_WINDOW_COMMAND}"
+            -w )            SCROT="${SCREENSHOT_WINDOW_COMMAND}"
                             ;;
-            -f | --full)    SCROT="${SCREENSHOT_FULL_COMMAND}"
+            -u )            CURSOR=0
                             ;;
             -d | --delay)   if [[ $2 != ?(-)+([0-9]) ]];then
                                 message="\n\tDelay value must be an integer\n\tExiting script...\n"
@@ -93,9 +94,9 @@ FILE_NAME="scrotcloud-%Y_%m_%d-%H:%M:%S"
 FILE_FORMAT="png"   
 
 # Screenshot scrot commands
-SCREENSHOT_SELECT_COMMAND="scrot -s "
-SCREENSHOT_WINDOW_COMMAND="scrot -u -b "
-SCREENSHOT_FULL_COMMAND="scrot "
+SCREENSHOT_SELECT_COMMAND="maim -s "
+SCREENSHOT_WINDOW_COMMAND="maim -i $(xdotool getactivewindow) "
+SCREENSHOT_FULL_COMMAND="maim "
 
 EOF
     fi
@@ -155,7 +156,7 @@ function getimage(){
             exit 0
         elif (( ret == 0 )) && [[ ${SCROT} == *"-s"* ]];then            # scrot command contains "-s"
             yad_info "\n\tDrag cursor to select area for screenshot\n"  # to select area
-        elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" 
+        elif (( ret == 0 )) && [[ ${SCROT} == *"-i"* ]];then            # scrot command contains "-u" 
             yad_info "\n\tSelect window to be Active, then click 'OK'\n" #for active window
         fi
         yad_common_args+=("--image=0")
