@@ -114,9 +114,9 @@ FILE_NAME="imgur-%Y_%m_%d-%H:%M:%S"
 FILE_FORMAT="jpg"   
 
 # Screenshot scrot commands
-SCREENSHOT_SELECT_COMMAND="scrot -s "
-SCREENSHOT_WINDOW_COMMAND="scrot -u -b "
-SCREENSHOT_FULL_COMMAND="scrot "
+SCREENSHOT_SELECT_COMMAND="scrot -s"
+SCREENSHOT_WINDOW_COMMAND="scrot -u"
+SCREENSHOT_FULL_COMMAND="scrot"
 
 EOF
     fi
@@ -171,10 +171,11 @@ function getimage(){
         yad_common_args+=("--image=dialog-info")
         if (( ret == 1 ));then
             exit 0
-        elif (( ret == 0 )) && [[ ${SCROT} == *"-s"* ]];then            # scrot command contains "-s"
-            yad_info "\n\tDrag cursor to select area for screenshot\n"  # to select area
-        elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" 
-            yad_info "\n\tSelect window to be Active, then click 'OK'\n" #for active window
+        elif (( ret == 0 )) && [[ ${SCROT} == *"-s"* ]];then            # scrot command contains "-s" to select area
+            yad_info "\n\tDrag cursor to select area for screenshot\n"  
+        elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
+            yad_info "\n\tDouble-click on window\nwanted for screenshot\n"       
+            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
 
@@ -336,6 +337,7 @@ function main(){
     
     export VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
     # for use by show_image()
+    [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
 
     if ! . "${BL_YAD_INCLUDES}" 2> /dev/null; then
         echo "Error: Failed to source yad-includes in ${BL_YAD_INCLUDES}" >&2
@@ -351,8 +353,21 @@ function main(){
     getargs "${@}"
     getimage "${FNAME}"
      
-    response="$(curl -s --location --request POST https://api.imgbb.com/1/upload?key=${CLIENT_API_KEY} \
-    --form image=@${img_file})"
+    temp_file=$(mktemp --tmpdir response.XXX) # stores curl output for use by $RESPONSE
+    curl_cmd="curl -s --location --request POST https://api.imgbb.com/1/upload?key=${CLIENT_API_KEY} \
+    --form image=@${img_file}"
+    local message='
+      Uploading screenshot to imgbb...
+    '
+    # Run curl command passed as first arg; write output to tempfile; pipe to yad --progress
+set -x  # needed so pulsate progress dsiplays. for some reason
+    eval "${curl_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
+    --progress-text="${message}" \
+    --undecorated --on-top --sticky --center \
+    --borders=20 --button='Cancel':'/bin/bash -c "killall curl"' 2>/dev/null
+set +x
+    response=$(cat "${temp_file}")  # used by calling function
+    rm -f "${temp_file}"
 
     del_url="$(jq -r '.data.delete_url' <<< "${response}")" && export del_url   # used by delete_image()
     img_link="$(jq -r '.data.image.url' <<< "${response}")" && export img_link  # used by show_image()
