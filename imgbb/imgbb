@@ -109,9 +109,9 @@ IMG_VIEWER=""
 # Local file settings
 # User directory to save image:
 FILE_DIR="$(xdg-user-dir PICTURES)"
-FILE_NAME="imgur-%Y_%m_%d-%H:%M:%S"
+FILE_NAME="imgbb-%Y_%m_%d-%H:%M:%S"
 # possible formats are png | jpg | tif | gif | bmp | webp
-FILE_FORMAT="jpg"   
+FILE_FORMAT="png"   
 
 # Screenshot scrot commands
 SCREENSHOT_SELECT_COMMAND="scrot -s"
@@ -174,7 +174,11 @@ function getimage(){
         elif (( ret == 0 )) && [[ ${SCROT} == *"-s"* ]];then            # scrot command contains "-s" to select area
             yad_info "\n\tDrag cursor to select area for screenshot\n"  
         elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
+<<<<<<< HEAD
             yad_info "\n\tDouble-click on window\nwanted for screenshot\n"       
+=======
+            yad_info "\n\tDouble-click on window\n\twanted for the screenshot\n"       
+>>>>>>> testing
             SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
@@ -202,7 +206,7 @@ function delete_image() {   # Open imgbb at image to be deleted
     switch_to_active
 }
 
-function delete_local(){    # delete local screenshot; don't delete if --file was script arg.
+function delete_local(){    # delete local screenshot; don't delete if '--file' was script arg.
     local message ret
     source "${BL_YAD_INCLUDES}"
    
@@ -226,9 +230,22 @@ function take_screenshot() {
     local cmd_scrot shot_err message
     
     cmd_scrot="${SCROT}$1"
+    msg="\nCountdown to screenshot from ${DELAY} seconds\n \
+(There may be a few seconds of inactivity\n \
+while the screenshot takes place.\n"
+
+    if echo "${cmd_scrot}" | grep -w "\-d" &>/dev/null;then     # show countdown indicator
+        yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
+            --window-icon=distributor-logo-bunsenlabs \
+            --timeout=${DELAY} --timeout-indicator=bottom \
+            --text="${msg}" \
+            ${CANCEL}
+            (( $? == 1 )) && exit
+    fi
+    
     shot_err="$(${cmd_scrot} &>/dev/null)" #takes a screenshot
     if [ "$?" != "0" ]; then
-        message="\n\tFailed to take screenshot of\n\t'$1':\n\n\tError: '${shot_err}'"
+        message="\n\tFailed to take screenshot of\n\t'$1':\n\n\tError: '${shot_err}'\n"
         echo -e "${message}"
         yad_error "${message}"
         exit 1
@@ -357,7 +374,13 @@ function main(){
     curl_cmd="curl -s --location --request POST https://api.imgbb.com/1/upload?key=${CLIENT_API_KEY} \
     --form image=@${img_file}"
     local message='
+<<<<<<< HEAD
       Uploading screenshot to imgbb...
+=======
+    
+      Uploading screenshot to imgbb...
+      
+>>>>>>> testing
     '
     # Run curl command passed as first arg; write output to tempfile; pipe to yad --progress
 set -x  # needed so pulsate progress dsiplays. for some reason
@@ -412,7 +435,7 @@ set +x
                 curr_desktop=$(xdotool get_desktop) # get Desktop index, so we can return to it
                 delete_image
                 dlg=$(${DIALOG} --on-top --undecorated \
-                    ${T}"Choose 'OK' when you have deleted the image" \
+                    ${T}"Choose 'OK' when you have confirmed image deletion" \
                     ${OK} ${CANCEL} \
                     )
                 ret=$?
