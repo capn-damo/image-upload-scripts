@@ -151,12 +151,12 @@ function check_required(){
 ### File and Image functions ###
 function getimage(){
     local message ret
-    
     if ! [[ -z ${DELAY} ]] 2>/dev/null && ! [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]] 2>/dev/null;then
         SCROT="${SCROT} -d ${DELAY} "
         message="\n\tNo image file provided...\n\tProceed with screenshot?\n \
         \n\tThere will be a pause of ${DELAY}s, to select windows etc\n"
     else
+        DELAY=0
         SCROT="${SCROT} -d 1 "   # need a pause so YAD dialog can leave the scene
         message="\n\tNo image file provided...\n\tProceed with screenshot?\n"
     fi
@@ -166,7 +166,7 @@ function getimage(){
         yad_question "${message}"
         ret="$?"
         yad_common_args+=("--image=0")
-        
+#echo "scrot= ${SCROT}" && exit        
         yad_common_args+=("--image=dialog-info")
         if (( ret == 1 ));then
             exit 0
@@ -228,16 +228,17 @@ function take_screenshot() {
     msg="\nCountdown to screenshot from ${DELAY} seconds\n \
 (There may be a few seconds of inactivity\n \
 while the screenshot takes place.\n"
-
-    if echo "${cmd_scrot}" | grep -w "\-d" &>/dev/null;then     # show countdown indicator
+    if (( DELAY > 1 ));then       
+        if echo "${cmd_scrot}" | grep -w "\-d" &>/dev/null;then     # show countdown indicator
         yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
             --window-icon=distributor-logo-bunsenlabs \
             --timeout=${DELAY} --timeout-indicator=bottom \
             --text="${msg}" \
             ${CANCEL}
             (( $? == 1 )) && exit
-    fi
-    
+        fi
+    fi 
+
     shot_err="$(${cmd_scrot} &>/dev/null)" #takes a screenshot
     if [ "$?" != "0" ]; then
         message="\n\tFailed to take screenshot of\n\t'$1':\n\n\tError: '${shot_err}'\n"
@@ -250,7 +251,7 @@ while the screenshot takes place.\n"
 function show_image(){  # display image using viewer set in settings.conf
     # if image viewer not set, then default to browser
     [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
-    ${VIEWER} "$img_link"
+    ${VIEWER} "${img_file}"
     switch_to_active
 }
 
@@ -394,7 +395,7 @@ set +x
     # download image thumbnail, for display in YAD dialog
     thumb_tempfile="${HOME}/tmp/thumb.jpg"
     wget -q -O "${thumb_tempfile}" "${img_small}"
-    
+
     # Display BB Codes for uploaded image
     text='
         BB Code - Image thumbnail Linked
