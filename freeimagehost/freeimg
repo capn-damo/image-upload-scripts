@@ -5,7 +5,7 @@
 #
 # Credentials for an account can be set up.
 #
-# Settings (imgbb.conf) file is created in $HOME/.config/imgbb
+# Settings (settings.conf) file is created in $HOME/.config/imgbb
 #
 # The script returns BB-Code for the direct image link, and a linked thumbnail.
 # YAD dialogs are used for user interaction.
@@ -36,7 +36,7 @@ export API_URL="https://api.imgbb.com/"   # used by run_browser()
 
 export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes' 
 USR_CFG_DIR="$HOME/.config/imgbb"
-SETTINGS_FILE="${USR_CFG_DIR}/imgbb.conf"
+SETTINGS_FILE="${USR_CFG_DIR}/settings.conf"
 SCRIPT=$(basename "$0")
 export IMG_VIEWER="x-www-browser"   # used by show_image()
 
@@ -90,7 +90,7 @@ function getargs(){
         shift
     done
 }
-### Initialize imgbb.conf config  ###
+### Initialize settings.conf config  ###
 function settings_conf(){
     ! [[ -d "${USR_CFG_DIR}" ]] && mkdir -p "${USR_CFG_DIR}" 2>/dev/null
 
@@ -110,7 +110,7 @@ IMG_VIEWER=""
 FILE_DIR="$(xdg-user-dir PICTURES)"
 FILE_NAME="imgbb-%Y_%m_%d-%H:%M:%S"
 # possible formats are png | jpg | tif | gif | bmp | webp
-FILE_FORMAT="jpg"   
+FILE_FORMAT="png"   
 
 # Screenshot scrot commands
 SCREENSHOT_SELECT_COMMAND="scrot -s"
@@ -155,19 +155,18 @@ function getimage(){
         SCROT="${SCROT} -d ${DELAY} "
         message="\n\tNo image file provided...\n\tProceed with screenshot?\n \
         \n\tThere will be a pause of ${DELAY}s, to select windows etc\n"
-    elif [[ ${DELAY} ]] 2>/dev/null && [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]] 2>/dev/null;then
-        yad_error "\n\tUse '-d' (delay) or '-s' (select area), not both together.\n\n\tExiting script...\n"
-        exit
     else
         DELAY=0
         SCROT="${SCROT} -d 1 "   # need a pause so YAD dialog can leave the scene
         message="\n\tNo image file provided...\n\tProceed with screenshot?\n"
     fi
+
     if [[ -z "$1" ]] 2>/dev/null; then
         yad_common_args+=("--image=dialog-question")
         yad_question "${message}"
         ret="$?"
         yad_common_args+=("--image=0")
+#echo "scrot= ${SCROT}" && exit        
         yad_common_args+=("--image=dialog-info")
         if (( ret == 1 ));then
             exit 0
@@ -178,6 +177,7 @@ function getimage(){
             SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
+
         # new filename with date
         img_file="$(date +"${FILE_NAME}.${FILE_FORMAT}")"
         img_file="${FILE_DIR}/${img_file}" && export img_file
@@ -223,24 +223,24 @@ function delete_local(){    # delete local screenshot; don't delete if '--file' 
 
 function take_screenshot() {
     local cmd_scrot shot_err message
+    
     cmd_scrot="${SCROT}$1"
-    msg1="\nCountdown to screenshot from ${DELAY} seconds\n \
+    msg="\nCountdown to screenshot from ${DELAY} seconds\n \
 (There may be a few seconds of inactivity\n \
 while the screenshot takes place.\n"
-
     if (( DELAY > 1 ));then       
         if echo "${cmd_scrot}" | grep -w "\-d" &>/dev/null;then     # show countdown indicator
-            yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
-                --window-icon=distributor-logo-bunsenlabs \
-                --timeout=${DELAY} --timeout-indicator=bottom \
-                --text="${msg1}" \
-                ${CANCEL}
-                (( $? == 1 )) && exit
+        yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
+            --window-icon=distributor-logo-bunsenlabs \
+            --timeout=${DELAY} --timeout-indicator=bottom \
+            --text="${msg}" \
+            ${CANCEL}
+            (( $? == 1 )) && exit
         fi
     fi 
 
     shot_err="$(${cmd_scrot} &>/dev/null)" #takes a screenshot
-    if (( $? != 0 )); then
+    if [ "$?" != "0" ]; then
         message="\n\tFailed to take screenshot of\n\t'$1':\n\n\tError: '${shot_err}'\n"
         echo -e "${message}"
         yad_error "${message}"
@@ -248,7 +248,7 @@ while the screenshot takes place.\n"
     fi
 }
 
-function show_image(){  # display image using viewer set in imgbb.conf
+function show_image(){  # display image using viewer set in settings.conf
     # if image viewer not set, then default to browser
     [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
     ${VIEWER} "${img_file}"
@@ -269,9 +269,8 @@ function watermark_thumb() {    # add watermark to thumbnail if uploaded image h
 ### END Image Functions ################################################
 
 function get_client_api_key(){
-    local curr_desktop message dlg ans dlg_msg dlg_err
-    
-    curr_desktop=$(xdotool get_desktop) # get Desktop index, so we can return to it
+    local message dlg ans dlg_msg dlg_err
+
     message='
         You need to Register or log in to your imgbb account to get an API Key.
 
@@ -311,15 +310,11 @@ function get_client_api_key(){
         fi
     fi
 
-    # write credentials to imgbb.conf
+    # write credentials to settings.conf
     # sed: change line containing <string> to <stringvar>
     api_line="CLIENT_API_KEY="\""${CLIENT_API_KEY}\""
     sed -i "s/^CLIENT_API_KEY.*/${api_line}/" "${SETTINGS_FILE}"
     source "${SETTINGS_FILE}"
-    
-    xdotool key ctrl+w  # close current tab, and return to original desktop
-    xdotool set_desktop ${curr_desktop}
-
 }
 function run_browser(){     # run browser with API url, and switch to attention-seeking browser tab
     local api_call="$1"     # function called from button in dialog
@@ -338,14 +333,15 @@ function switch_to_active(){   # switch to new browser tab
         xprop -id "$id" | grep -q "_NET_WM_STATE_DEMANDS_ATTENTION"
         if (( $? == 0 )); then
             wmctrl -i -a "$id"
+#            exit 0
         fi
     done
 }
 
 function main(){
-    settings_conf   # set up imgbb.conf if necessary
+    settings_conf   # set up settings.conf if necessary
 
-    # set defaults
+    # set defaults, if login not specified in script args
     SCROT="${SCREENSHOT_FULL_COMMAND}"        
 
     export -f run_browser   # to be used as YAD button command
@@ -370,7 +366,7 @@ function main(){
     getargs "${@}"
     getimage "${FNAME}"
      
-    temp_file=$(mktemp --tmpdir response.XXX) # stores curl output for use by ${response}
+    temp_file=$(mktemp --tmpdir response.XXX) # stores curl output for use by $RESPONSE
     curl_cmd="curl -s --location --request POST https://api.imgbb.com/1/upload?key=${CLIENT_API_KEY} \
     --form image=@${img_file}"
     local message='
