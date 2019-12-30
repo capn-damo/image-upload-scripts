@@ -175,7 +175,7 @@ function getimage(){
             yad_info "\n\tDrag cursor to select area for screenshot\n"  
         elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
             yad_info "\n\tDouble-click on window\n\twanted for the screenshot\n"       
-            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
+            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/')                  # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
         # new filename with date
@@ -222,9 +222,9 @@ function delete_local(){    # delete local screenshot; don't delete if '--file' 
 }
 
 function take_screenshot() {
-    local cmd_scrot shot_err message
+    local cmd_scrot shot_err msg message
     cmd_scrot="${SCROT}$1"
-    msg1="\nCountdown to screenshot from ${DELAY} seconds\n \
+    msg="\nCountdown to screenshot from ${DELAY} seconds\n \
 (There may be a few seconds of inactivity\n \
 while the screenshot takes place.\n"
 
@@ -233,7 +233,7 @@ while the screenshot takes place.\n"
             yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
                 --window-icon=distributor-logo-bunsenlabs \
                 --timeout=${DELAY} --timeout-indicator=bottom \
-                --text="${msg1}" \
+                --text="${msg}" \
                 ${CANCEL}
                 (( $? == 1 )) && exit
         fi
@@ -246,6 +246,7 @@ while the screenshot takes place.\n"
         yad_error "${message}"
         exit 1
     fi
+    image_resize "${img_file}" # Give choice to reduce image dimensions
 }
 
 function show_image(){  # display image using viewer set in imgbb.conf
@@ -253,6 +254,35 @@ function show_image(){  # display image using viewer set in imgbb.conf
     [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
     ${VIEWER} "${img_file}"
     switch_to_active
+}
+
+function image_resize(){ # Reduce image size to 10%-90% of original
+    local img="$1"
+    local message
+    
+    img_size=$(du -h "${img}" | awk '{print $1}')
+    img_name="$(basename ${img})"
+    img_dirpath="$(dirname ${img})"
+    dlg=$(yad --form --undecorated --on-top --borders=20 \
+        --image=gtk-dialog-info \
+        --text="\n\tScreenshot saved to: ${img_dirpath}\n\n \
+       Image : ${img_name}\n\tFilesize: ${img_size}\n" \
+        --columns=2 \
+        --field="\t\tReduce dimensions to % ":NUM "50!10..95!5!!" \
+        --field=" \t":LBL \
+        --button=OK:0 --button=gtk-cancel:1 \
+        )
+    ans=$?
+    if (( $ans == 0 ));then
+        reduce=${dlg//|/ }  # remove pipe seperators from return value
+        resize_err=$((convert "${img}" -resize "${reduce}%" "${img_file}" >&2) 2>&1)
+        if (( $? != 0 )); then
+            message="\n\tFailed to resize image\n\t${img_name}:\n\n\tError: ${resize_err}\n"
+            echo -e "${message}"
+            yad_error "${message}"
+            exit 1
+        fi
+    fi
 }
 
 function watermark_thumb() {    # add watermark to thumbnail if uploaded image has been deleted
@@ -321,6 +351,7 @@ function get_client_api_key(){
     xdotool set_desktop ${curr_desktop}
 
 }
+
 function run_browser(){     # run browser with API url, and switch to attention-seeking browser tab
     local api_call="$1"     # function called from button in dialog
     if [[ ${api_call} = "addclient" ]]; then
