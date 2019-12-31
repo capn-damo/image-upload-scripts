@@ -256,9 +256,9 @@ function show_image(){  # display image using viewer set in imgbb.conf
     switch_to_active
 }
 
-function image_resize(){ # Reduce image size to 10%-90% of original
-    local img="$1"
-    local message
+function image_resize(){ # Reduce image size to 10%-90% of original or
+    local img="$1"       # Enlarge image up to 300% of original
+    local msg1 msg2
     
     img_size=$(du -h "${img}" | awk '{print $1}')
     img_name="$(basename ${img})"
@@ -269,17 +269,37 @@ function image_resize(){ # Reduce image size to 10%-90% of original
        Image : ${img_name}\n\tFilesize: ${img_size}\n" \
         --columns=2 \
         --field="\t\tReduce dimensions to % ":NUM "50!10..95!5!!" \
-        --field=" \t":LBL \
-        --button=OK:0 --button=gtk-cancel:1 \
+        --field="\t\tIncrease dimensions to % ":NUM "200!110..300!10!!" \
+        --field=:LBL --field=:LBL \
+        --button=Reduce:0 --button=Enlarge:2 --button=gtk-cancel:1 \
         )
     ans=$?
+    reduce=$(echo ${dlg} | awk -F '|' '{print $1}')
+    enlarge=$(echo ${dlg} | awk -F '|' '{print $2}')
     if (( $ans == 0 ));then
-        reduce=${dlg//|/ }  # remove pipe seperators from return value
-        resize_err=$((convert "${img}" -resize "${reduce}%" "${img_file}" >&2) 2>&1)
+        resize=${reduce}
+    elif (( $ans == 2 ));then
+        resize=${enlarge}
+    fi
+    if (( $ans != 1 ));then
+        temp_file=$(mktemp --tmpdir resize.XXX) # stores curl output for use by ${response}
+        resize_cmd="convert ${img} -resize ${resize}% ${img_file}"
+        msg1='
+    Resizing image
+        '
+set -x # needed so progress bar shows up
+        eval "${resize_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
+            --progress-text="${msg1}" \
+            --undecorated --on-top --sticky --center \
+            --borders=20 --button='Cancel':'/bin/bash -c "killall convert"' 2>/dev/null  
+set +x            
+        resize_err=$(cat "${temp_file}")  # used by calling function
+        rm -f "${temp_file}"
+
         if (( $? != 0 )); then
-            message="\n\tFailed to resize image\n\t${img_name}:\n\n\tError: ${resize_err}\n"
-            echo -e "${message}"
-            yad_error "${message}"
+            msg2="\n\tFailed to resize image\n\t${img_name}:\n\n\tError: ${resize_err}\n"
+            echo -e "${msg2}"
+            yad_error "${msg2}"
             exit 1
         fi
     fi
