@@ -31,7 +31,6 @@
 #
 ########################################################################
 
-URL="https://api.imgbb.com/1/upload"
 export API_URL="https://api.imgbb.com/"   # used by run_browser()
 
 export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes' 
@@ -200,8 +199,10 @@ function getimage(){
 
 function make_thumbnail(){
     local img="$1"
-    local img_name="$(basename ${img})"
-    local img_dirpath="$(dirname ${img})"
+    local img_name img_dirpath thumbnail
+    
+    img_name="$(basename ${img})"
+    img_dirpath="$(dirname ${img})"
     thumbnail="${img_dirpath}/th_${img_name}"
 
     convert "${img}" -resize 150 "${img_dirpath}/th_${img_name}"
@@ -253,7 +254,7 @@ while the screenshot takes place.\n"
                 (( $? == 1 )) && exit
         fi
     fi 
-    shot_err="$((${cmd_scrot} >&2) 2>&1)" #takes a screenshot
+    shot_err="$( (${cmd_scrot} >&2) 2>&1)" #takes a screenshot
     if (( $? != 0 )); then
         message="\n\tFailed to take screenshot of\n\t$1:\n\n\tError: '${shot_err}'\n"
         echo -e "${message}"
@@ -328,7 +329,6 @@ set +x
 }
 
 function watermark_thumb() {    # add watermark to thumbnail if uploaded image has been deleted
-    local input_img="${thumb_tempfile}"
     local delete_text="$HOME/tmp/deleted.png"
 
     # create watermark image
@@ -436,7 +436,6 @@ set +x
     del_url="$(jq -r '.data.delete_url' <<< "${response}")" && export del_url   # used by delete_image()
     img_link="$(jq -r '.data.image.url' <<< "${response}")" && export img_link  # used by show_image()
     img_small="$(jq -r '.data.thumb.url' <<< "${response}")"
-    img_medium="$(jq -r '.data.medium.url' <<< "${response}")"
 
     bb_direct_link="[img]${img_link}[/img]"
     bb_thumb_linked="[url=${img_link}][img]${img_small}[/img][/url]"
@@ -469,13 +468,13 @@ function main(){
 
     # set defaults
     SCROT="${SCREENSHOT_FULL_COMMAND}"        
-
-    export -f run_browser   # to be used as YAD button command
-    export -f switch_to_active # switch to active window
-    export -f show_image        # to be used as YAD button command
+    VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
     
-    export VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
-    # for use by show_image()
+    export -f run_browser       # to be used as YAD button command
+    export -f switch_to_active  # switch to active window
+    export -f show_image        # to be used as YAD button command
+    export VIEWER               # for use by show_image()
+    
     [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
 
     if ! . "${BL_YAD_INCLUDES}" 2> /dev/null; then
@@ -541,7 +540,7 @@ function main(){
                     Then choose  "Confirm"
                     
                     '
-                yad_common_args+=("--on-top"=0 "--image=0")
+                yad_common_args+=("--on-top=0" "--image=0")
                 curr_desktop=$(xdotool get_desktop) # get Desktop index, so we can return to it
                 delete_image
                 dlg=$(${DIALOG} --on-top --undecorated \
