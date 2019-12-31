@@ -175,7 +175,7 @@ function getimage(){
             yad_info "\n\tDrag cursor to select area for screenshot\n"  
         elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
             yad_info "\n\tDouble-click on window\n\twanted for the screenshot\n"       
-            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/')                  # swap '-u' to '-s'
+            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
         # new filename with date
@@ -194,6 +194,17 @@ function getimage(){
         yad_error "${message}"
         exit 1
     fi
+    # make thumbnail for dialog icon
+    make_thumbnail "${img_file}"
+}
+
+function make_thumbnail(){
+    local img="$1"
+    local img_name="$(basename ${img})"
+    local img_dirpath="$(dirname ${img})"
+    thumbnail="${img_dirpath}/th_${img_name}"
+
+    convert "${img}" -resize 150 "${img_dirpath}/th_${img_name}"
 }
 
 function delete_image() {   # Open imgbb at image to be deleted
@@ -214,17 +225,21 @@ function delete_local(){    # delete local screenshot; don't delete if '--file' 
         if (( ret == 0 )); then
             if type "/usr/bin/gio" > /dev/null;then # 'gio' is part of 'gvfs' package
                 gio trash "${img_file}"
+                gio trash "${thumbnail}"
             else
                 rm "${img_file}"
+                rm "${thumbnail}"
             fi
+        else
+            rm "${thumbnail}"   # Presumably we don't want to keep temporary thumbnail
         fi
     fi
 }
 
 function take_screenshot() {
-    local cmd_scrot shot_err msg message
+    local cmd_scrot shot_err message
     cmd_scrot="${SCROT}$1"
-    msg="\nCountdown to screenshot from ${DELAY} seconds\n \
+    msg1="\nCountdown to screenshot from ${DELAY} seconds\n \
 (There may be a few seconds of inactivity\n \
 while the screenshot takes place.\n"
 
@@ -233,20 +248,18 @@ while the screenshot takes place.\n"
             yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
                 --window-icon=distributor-logo-bunsenlabs \
                 --timeout=${DELAY} --timeout-indicator=bottom \
-                --text="${msg}" \
+                --text="${msg1}" \
                 ${CANCEL}
                 (( $? == 1 )) && exit
         fi
     fi 
-
-    shot_err="$(${cmd_scrot} &>/dev/null)" #takes a screenshot
+    shot_err="$((${cmd_scrot} >&2) 2>&1)" #takes a screenshot
     if (( $? != 0 )); then
-        message="\n\tFailed to take screenshot of\n\t'$1':\n\n\tError: '${shot_err}'\n"
+        message="\n\tFailed to take screenshot of\n\t$1:\n\n\tError: '${shot_err}'\n"
         echo -e "${message}"
         yad_error "${message}"
         exit 1
     fi
-    image_resize "${img_file}" # Give choice to reduce image dimensions
 }
 
 function show_image(){  # display image using viewer set in imgbb.conf
@@ -256,15 +269,23 @@ function show_image(){  # display image using viewer set in imgbb.conf
     switch_to_active
 }
 
-function image_resize(){ # Reduce image size to 10%-90% of original or
-    local img="$1"       # Enlarge image up to 300% of original
-    local msg1 msg2
+function image_resize(){ # Reduce image size to 10%-90% of original
+    local img="$1"
+    local message
     
-    img_size=$(du -h "${img}" | awk '{print $1}')
+    if ! [[ -f "${img}" ]];then
+        err_msg="\nCan't find ${img}\n"
+        echo -e "${err_msg}"
+        yad_error "${err_msg}"
+        exit 1
+    else
+        img_size=$(du -h "${img}" | awk '{print $1}')
+    fi
+    
     img_name="$(basename ${img})"
     img_dirpath="$(dirname ${img})"
     dlg=$(yad --form --undecorated --on-top --borders=20 \
-        --image=gtk-dialog-info \
+        --image="${thumbnail}" \
         --text="\n\tScreenshot saved to: ${img_dirpath}\n\n \
        Image : ${img_name}\n\tFilesize: ${img_size}\n" \
         --columns=2 \
@@ -276,6 +297,7 @@ function image_resize(){ # Reduce image size to 10%-90% of original or
     ans=$?
     reduce=$(echo ${dlg} | awk -F '|' '{print $1}')
     enlarge=$(echo ${dlg} | awk -F '|' '{print $2}')
+    
     if (( $ans == 0 ));then
         resize=${reduce}
     elif (( $ans == 2 ));then
@@ -284,24 +306,24 @@ function image_resize(){ # Reduce image size to 10%-90% of original or
     if (( $ans != 1 ));then
         temp_file=$(mktemp --tmpdir resize.XXX) # stores curl output for use by ${response}
         resize_cmd="convert ${img} -resize ${resize}% ${img_file}"
-        msg1='
+        message='
     Resizing image
         '
-set -x # needed so progress bar shows up
+set -x # needed so progress bar shows
         eval "${resize_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
-            --progress-text="${msg1}" \
+            --progress-text="${message}" \
             --undecorated --on-top --sticky --center \
             --borders=20 --button='Cancel':'/bin/bash -c "killall convert"' 2>/dev/null  
 set +x            
         resize_err=$(cat "${temp_file}")  # used by calling function
-        rm -f "${temp_file}"
 
         if (( $? != 0 )); then
-            msg2="\n\tFailed to resize image\n\t${img_name}:\n\n\tError: ${resize_err}\n"
-            echo -e "${msg2}"
-            yad_error "${msg2}"
+            message="\n\tFailed to resize image\n\t${img_name}:\n\n\tError: ${resize_err}\n"
+            echo -e "${message}"
+            yad_error "${message}"
             exit 1
         fi
+        rm -f "${temp_file}"
     fi
 }
 
@@ -371,7 +393,6 @@ function get_client_api_key(){
     xdotool set_desktop ${curr_desktop}
 
 }
-
 function run_browser(){     # run browser with API url, and switch to attention-seeking browser tab
     local api_call="$1"     # function called from button in dialog
     if [[ ${api_call} = "addclient" ]]; then
@@ -403,7 +424,7 @@ function upload_image(){
       
     '
     # Run curl command passed as first arg; write output to tempfile; pipe to yad --progress
-set -x  # needed so pulsate progress dsiplays. for some reason
+set -x  # needed so pulsate progress displays. for some reason
     eval "${curl_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
     --progress-text="${message}" \
     --undecorated --on-top --sticky --center \
@@ -475,13 +496,19 @@ function main(){
     dtop="$(xdotool get_desktop)" 
     while true;do
         ${DIALOG} --undecorated --sticky --on-top --image=gtk-dialog-question --center \
-        --button="Show screenshot?:2" \
+        --image="${thumbnail}" \
+        --text="\n\t$(basename ${img_file})\n" \
+        --button="Show screenshot:2" \
+        --button="Resize image:3" \
         --button="Upload:4" \
         --button="Exit:1"
 
         ans=$?
         case ${ans} in
             2)  show_image
+                continue
+                ;;
+            3)  image_resize "${img_file}"
                 continue
                 ;;
             4)  upload_image
