@@ -199,7 +199,7 @@ function getimage(){
 
 function make_thumbnail(){
     local img="$1"
-    local img_name img_dirpath thumbnail
+    local img_name img_dirpath
     
     img_name="$(basename ${img})"
     img_dirpath="$(dirname ${img})"
@@ -223,6 +223,7 @@ function delete_local(){    # delete local screenshot; don't delete if '--file' 
         yad_question "${message}"
         ret="$?"
         yad_common_args+=("--image=0")
+        
         if (( ret == 0 )); then
             if type "/usr/bin/gio" > /dev/null;then # 'gio' is part of 'gvfs' package
                 gio trash "${img_file}"
@@ -576,7 +577,6 @@ function main(){
         #break
     done
     delete_local
-    rm "${thumb_tempfile}"
 }
 ### END FUNCTIONS ######################################################
 
