@@ -174,7 +174,7 @@ function getimage(){
             yad_info "\n\tDrag cursor to select area for screenshot\n"  
         elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
             yad_info "\n\tDouble-click on window\n\twanted for the screenshot\n"       
-            SCROT=$(echo "${SCROT}" | sed 's/-u/-s/' )                  # swap '-u' to '-s'
+            SCROT="${SCROT//-u/-s}"                                      # swap '-u' to '-s'
         fi
         yad_common_args+=("--image=0")
         # new filename with date
@@ -201,8 +201,8 @@ function make_thumbnail(){
     local img="$1"
     local img_name img_dirpath
     
-    img_name="$(basename ${img})"
-    img_dirpath="$(dirname ${img})"
+    img_name="$(basename "${img}")"
+    img_dirpath="$(dirname "${img}")"
     thumbnail="${img_dirpath}/th_${img_name}"
 
     convert "${img}" -resize 150 "${img_dirpath}/th_${img_name}"
@@ -286,8 +286,8 @@ function image_resize(){ # Reduce image size to 10%-90% of original
         img_size=$(du -h "${img}" | awk '{print $1}')
     fi
     
-    img_name="$(basename ${img})"
-    img_dirpath="$(dirname ${img})"
+    img_name="$(basename "${img}")"
+    img_dirpath="$(dirname "${img}")"
     dlg=$(yad --form --undecorated --on-top --borders=20 \
         --image="${thumbnail}" \
         --text="\n\tScreenshot saved to: ${img_dirpath}\n\n \
@@ -299,15 +299,15 @@ function image_resize(){ # Reduce image size to 10%-90% of original
         --button=Reduce:0 --button=Enlarge:2 --button=gtk-cancel:1 \
         )
     ans=$?
-    reduce=$(echo ${dlg} | awk -F '|' '{print $1}')
-    enlarge=$(echo ${dlg} | awk -F '|' '{print $2}')
+    reduce=$(echo "${dlg}" | awk -F '|' '{print $1}')
+    enlarge=$(echo "${dlg}" | awk -F '|' '{print $2}')
     
-    if (( $ans == 0 ));then
+    if (( ans == 0 ));then
         resize=${reduce}
-    elif (( $ans == 2 ));then
+    elif (( ans == 2 ));then
         resize=${enlarge}
     fi
-    if (( $ans != 1 ));then
+    if (( ans != 1 ));then
         temp_file=$(mktemp --tmpdir resize.XXX) # stores curl output for use by ${response}
         resize_cmd="convert ${img} -resize ${resize}% ${img_file}"
         message='
@@ -367,7 +367,7 @@ function get_client_api_key(){
     ) 2>/dev/null
     ans="$?"
     [[ ${ans} == 1 ]] && exit 0
-    CLIENT_API_KEY="$(echo ${dlg} | awk -F '|' '{print $1}')" # 'pipe' separators
+    CLIENT_API_KEY="$(echo "${dlg}" | awk -F '|' '{print $1}')" # 'pipe' separators
 
     # check returned values
     if [[ -z "${CLIENT_API_KEY}" ]] || (( ${#CLIENT_API_KEY} != 32 )) || ! [[ ${CLIENT_API_KEY} =~ ^[a-fA-F0-9]+$ ]];then
@@ -393,7 +393,7 @@ function get_client_api_key(){
     source "${SETTINGS_FILE}"
     
     xdotool key ctrl+w  # close current tab, and return to original desktop
-    xdotool set_desktop ${curr_desktop}
+    xdotool set_desktop "${curr_desktop}"
 
 }
 function run_browser(){     # run browser with API url, and switch to attention-seeking browser tab
@@ -463,7 +463,7 @@ function return_to_desktop(){
     else
         pkill -xf "${VIEWER} ${img_file}"
     fi
-    xdotool set_desktop ${curr_desktop}
+    xdotool set_desktop "${curr_desktop}"
 }
 
 function main(){
@@ -498,7 +498,7 @@ function main(){
     while true;do
         ${DIALOG} --undecorated --sticky --on-top --image=gtk-dialog-question --center \
         --image="${thumbnail}" \
-        --text="\n\t$(basename ${img_file})\n" \
+        --text="\n\t$(basename "${img_file}")\n" \
         --button="Show screenshot:2" \
         --button="Resize image:3" \
         --button="Upload:4" \
@@ -550,14 +550,14 @@ function main(){
                     ${OK} ${CANCEL} \
                     )
                 ret=$?
-                if (( $ret == 0 ));then
+                if (( ret == 0 ));then
                     xdotool key ctrl+w  # close current tab, and resume loop
-                    xdotool set_desktop ${curr_desktop}
+                    xdotool set_desktop "${curr_desktop}"
                     watermark_thumb
                     continue
                 else
                     xdotool key ctrl+w  # close current tab, and resume loop
-                    xdotool set_desktop ${curr_desktop}
+                    xdotool set_desktop "${curr_desktop}"
                     continue
                 fi
             else        # dialog 'Close' chosen
