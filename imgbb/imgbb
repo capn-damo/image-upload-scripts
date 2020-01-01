@@ -216,7 +216,7 @@ function delete_image() {   # Open imgbb at image to be deleted
 function delete_local(){    # delete local screenshot; don't delete if '--file' was script arg.
     local message ret
     source "${BL_YAD_INCLUDES}"
-   
+    
     if (( F_FLAG == 0));then    # local file wasn't uploaded, so don't offer to delete
         message="\n\tMove local screenshot image to 'Trash'?\n\n\t${img_file}\n"
         yad_common_args+=("--image=dialog-question")
@@ -235,6 +235,8 @@ function delete_local(){    # delete local screenshot; don't delete if '--file' 
         else
             rm "${thumbnail}"   # Presumably we don't want to keep temporary thumbnail
         fi
+    else
+        rm "${thumbnail}"   # Delete file upload thumbnail
     fi
 }
 
@@ -491,7 +493,6 @@ function main(){
     [[ -z "${CLIENT_API_KEY}" ]] && get_client_api_key
     getargs "${@}"
     getimage "${FNAME}"
-    
     # Option to show screenshot before uploading 
     dtop="$(xdotool get_desktop)" 
     while true;do
