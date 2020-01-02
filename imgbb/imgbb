@@ -34,7 +34,7 @@
 export API_URL="https://api.imgbb.com/"   # used by run_browser()
 
 export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes' 
-USR_CFG_DIR="$HOME/.config/imgbb"
+USR_CFG_DIR="$HOME/.config/image-upload"
 SETTINGS_FILE="${USR_CFG_DIR}/imgbb.conf"
 SCRIPT=$(basename "$0")
 export IMG_VIEWER="x-www-browser"   # used by show_image()
