@@ -20,14 +20,14 @@
 ########################################################################
 
 BL_COMMON_LIBDIR='/usr/lib/bunsen/common'
-USR_CFG_DIR="$HOME/.config/imgur"
+USR_CFG_DIR="$HOME/.config/image-upload/imgur"
 CREDENTIALS_FILE="${USR_CFG_DIR}/credentials.conf"
 SETTINGS_FILE="${USR_CFG_DIR}/settings.conf"
 SCRIPT=$(basename "$0")
 declare DELETE_HASH
 
 read -d '' USAGE <<EOF
-  imgur.sh [option]... [file]...
+  imgur [option]... [file]...
 
   With no script args, ${SCRIPT} will upload a screenshot of
   the full desktop, as anonymous user
@@ -41,7 +41,7 @@ read -d '' USAGE <<EOF
   -d, --delay <seconds>        Delay in integer seconds, before taking screenshot
   -a, --album <album_title>    Upload to specified album
   -t, --title <image title>    Label uploaded image
-  --file  <filepath/filename>    Upload specified image. Overrides scrot options
+  --file  <filepath/filename>  Upload specified image. Overrides scrot options
   
   The final dialog displays forum BB-Code for both the direct image link and
   the linked image thumbnail. These can be copy/pasted as desired.
@@ -187,11 +187,12 @@ function delete_image() {
 
     local IMG="$1"
     if [[ ${AUTH_MODE} == "L" ]];then
-        CMD="$(curl -s --location --request DELETE "https://api.imgur.com/3/image/${IMG}" \
-        --header "Authorization: Bearer ${ACCESS_TOKEN}")"
+        CMD="curl -s --location --request DELETE \"https://api.imgur.com/3/image/${IMG}\" \
+        --header \"Authorization: Bearer ${ACCESS_TOKEN}\""
+
     else
-        CMD="$(curl -s --location --request DELETE "https://api.imgur.com/3/image/${IMG}" \
-        --header "Authorization: Client-ID ${CLIENT_ID}")"
+        CMD="curl -s --location --request DELETE \"https://api.imgur.com/3/image/${IMG}\" \
+        --header \"Authorization: Client-ID ${CLIENT_ID}\""
     fi
     api_call "${CMD}" " Deleting file ${IMG_FILE} "
     
@@ -251,10 +252,10 @@ function api_call(){
     --undecorated --on-top --sticky --center \
     --borders=20 --button='Cancel':'/bin/bash -c "killall curl"' 2>/dev/null
 
-    # use bash built 'PIPESTATUS' to get curl exit code
+    # use bash builtin 'PIPESTATUS' to get curl exit code
     PIPE=( "${PIPESTATUS[@]}" ) # get pipe array values (curl was stopped?)
     RESPONSE=$(cat "${TEMP_FILE}")  # used by calling function
-    #IMG_ID="$(jq -r '.data.id' <<< ${RESPONSE})" # used by check_image()
+    IMG_ID="$(jq -r '.data.id' <<< ${RESPONSE})" # used by check_image()
     rm -f "${TEMP_FILE}"
 }
 ####### END Image Functions ############################################
@@ -463,15 +464,12 @@ function refresh_access_token() {
 function check_image(){
     local STATUS
     local IMG_HASH="$1"
-    #echo "IMG_HASH= ${IMG_HASH}"
-    #echo "Client-ID= ${CLIENT_ID}"
     CHECK="$(curl -s --location --request GET "https://api.imgur.com/3/image/${IMG_HASH}" \
     --header "${AUTH}")" && echo "$CHECK" > tmp/find.txt
     STATUS="$(jq -r '.status' <<< $CHECK)"
     DELETE_HASH="$(jq -r '.data.deletehash' <<< "${CHECK}")" 
     if (( ${STATUS} == 200 ));then
         DATA="$(jq -r '.data.datetime' <<< ${CHECK})"
-        #echo "DATA= $DATA"
         (( ${DATA} > ${DATETIME} )) && echo "newer" || echo "older"
     fi
 }
@@ -541,7 +539,6 @@ OK="--button=OK:0"
 ######## END FUNCTIONS #################################################
 
 ### main ###############################################################
-#set -x
 settings_conf   # set up settings.conf if necessary
 
 # set defaults, if login not specified in script args
@@ -613,7 +610,6 @@ else    # anonymous upload
     api_call "${CMD}" "  Uploading ${IMG_FILE}..."
 fi
 ###############
-
 if (( ${PIPE[0]} != 0 ));then # PIPESTATUS shows curl command failed
 
     #get most recent upload since script started
@@ -629,7 +625,7 @@ if (( ${PIPE[0]} != 0 ));then # PIPESTATUS shows curl command failed
             echo "file exists"
 
             delete_image "${RECENT_ID}"
-            #delete_local
+            delete_local
             rm "${TEMP_THUMB}"
             exit
         else
@@ -638,8 +634,6 @@ if (( ${PIPE[0]} != 0 ));then # PIPESTATUS shows curl command failed
             exit 1
         fi
     fi
-#    set +x
-#fi
 else
 ###############
     DEL_HASH="$(jq -r '.data.deletehash' <<< "${RESPONSE}")"
@@ -665,14 +659,12 @@ else
         --field="BB Code - Direct image link":TXT "${BB_DIRECT}" \
         ${DELETE} ${CLOSE}  --width=680 ${T}"${TEXT}" --text-align=left)
     RET="$?"
-    #echo "PIPE= $PIPE"
     if (( RET == 2 ));then    
         if [[ $AUTH_MODE == "A" ]];then
             delete_image "${DEL_HASH}"
         else
             delete_image "${IMG_ID}"
         fi
-        delete_local
         rm "${TEMP_THUMB}"
     fi
 fi
