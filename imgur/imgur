@@ -1,6 +1,5 @@
 #!/bin/bash
 #
-# imgthunar
 ################### imgur ###########################################
 # Take screenshots and upload them to Imgur.
 # This can be to an existing account, or anonymously.
@@ -48,13 +47,14 @@ read -d '' USAGE <<EOF
   The final dialog displays forum BB-Code for both the direct image link and
   the linked image thumbnail. These can be copy/pasted as desired.
 
-  Options to delete uploaded and/or local screenshot images before exiting script.
+  There is an option to delete uploaded and/or local screenshot images \
+  before exiting the script. This doesn't apply if using '--thunar'.
 
 EOF
 
 ### required programs ###
 declare -a APPS
-APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" "xclip" )
+APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" "xsel" )
 
 
 ### Get script args ####################################################
@@ -155,9 +155,9 @@ source "${SETTINGS_FILE}"
 ### Check required programs are installed ###
 function check_required(){
     local message
-    VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
+    #VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
     declare -a BAD_APPS # array to hold missing commands
-    APPS+=( "${VIEWER}" )
+    #APPS+=( "${VIEWER}" )
     
     for app in "${APPS[@]}";do
         if type "${app}" >/dev/null 2>&1;then
@@ -685,7 +685,7 @@ else
     BB_DIRECT="[img]${IMG_LINK}[/img]"
     BB_THUMB_LINKED="[url=${IMG_LINK}][img]${IMG_THUMB}[/img][/url]"
 
-    if (( THUNAR == 0 ));then     # is just the code on the clipboard wanted?
+    if (( THUNAR == 0 ));then     
         # download image thumbnail, for display in YAD dialog
         TEMP_THUMB="${HOME}/tmp/thumb.jpg"
         wget -q -O "${TEMP_THUMB}" "${IMG_THUMB}"
@@ -708,9 +708,9 @@ else
             fi
             rm "${TEMP_THUMB}"
         fi
-    else
-        echo "${BB_THUMB_LINKED}" | xclip
-        echo "${BB_THUMB_LINKED}" | xclip -selection clipboard
+    else                    # just the BBCode on the clipboard is wanted.
+        echo "${BB_THUMB_LINKED}" | xsel -i     # for middle-mouse paste
+        echo "${BB_THUMB_LINKED}" | xsel -b     # for ctrl-V/Paste
         notify-send "BBCode on clipboard"
     fi
 fi
