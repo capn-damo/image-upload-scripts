@@ -6,8 +6,8 @@
 #
 # Credentials and access token for an account can be set up.
 #
-# Settings (settings.conf) and credentials (credentials.conf}) files are created in \
-# $HOME/.config/imgur/
+# Settings (imgur.conf) and credentials (credentials.conf}) files are created in \
+# $HOME/.config/image-upload/imgur/
 #
 # The script returns BB-Code for the direct image link, and a linked thumbnail.
 # YAD dialogs are used for user interaction.
@@ -22,7 +22,7 @@
 BL_COMMON_LIBDIR='/usr/lib/bunsen/common'
 USR_CFG_DIR="$HOME/.config/image-upload/imgur"
 CREDENTIALS_FILE="${USR_CFG_DIR}/credentials.conf"
-SETTINGS_FILE="${USR_CFG_DIR}/settings.conf"
+SETTINGS_FILE="${USR_CFG_DIR}/imgur.conf"
 SCRIPT=$(basename "$0")
 declare DELETE_HASH
 
@@ -50,6 +50,11 @@ read -d '' USAGE <<EOF
 
 EOF
 
+### required programs ###
+declare -a APPS
+APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" )
+
+
 ### Get script args ####################################################
 function getargs(){
     if (( $# == 0 ));then               # no args, so run with anonymous, full desktop scrot
@@ -62,7 +67,7 @@ function getargs(){
             -h | --help)    echo -e "${USAGE}"
                             exit 0
                             ;;
-            -l | --login)   ID="${CLIENT_ID}" # run as auth user; username set in settings.conf
+            -l | --login)   ID="${CLIENT_ID}" # run as auth user; username set in imgur.conf
                             AUTH="Authorization: Bearer ${ACCESS_TOKEN}"  # in curl command
                             AUTH_MODE="L"
                             ;;
@@ -88,7 +93,7 @@ function getargs(){
                             fi
                             shift
                             ;;
-            -a | --album)   ALBUM_TITLE="$2"    # override settings.conf
+            -a | --album)   ALBUM_TITLE="$2"    # override imgur.conf
                             shift
                             ;;
             -t | --title)   IMG_TITLE="$2"
@@ -107,7 +112,7 @@ function getargs(){
         shift
     done
 }
-### Initialize settings.conf config  ###################################
+### Initialize imgur.conf config  ###################################
 function settings_conf(){
     ! [[ -d "$USR_CFG_DIR" ]] && mkdir -p "$USR_CFG_DIR" 2>/dev/null
 
@@ -142,6 +147,34 @@ EOF
     fi
 source "${SETTINGS_FILE}"
 }
+
+### Check required programs are installed ###
+function check_required(){
+    local message
+    declare -a BAD_APPS # array to hold missing commands
+    APPS+=( "${VIEWER}" )
+    
+    for app in "${APPS[@]}";do
+        if type "${app}" >/dev/null 2>&1;then
+            continue
+        else
+            echo >&2 "${app} not installed."
+            BAD_APPS+=( "${app}" )
+        fi
+    done
+    
+    if (( ${#BAD_APPS[@]} > 0 ));then
+        message="\n  You need to install\n"
+        for app in "${BAD_APPS[@]}";do
+            message="${message}  "\'"${app}"\'","
+        done
+        message="${message}\n  before proceeding.\n"
+        echo -e "${message}"
+        yad_error "${message}"
+        exit
+    fi
+}
+
 ### File and Image functions #####################################################
 function getimage(){
     [[ ${AUTH_MODE} = "A" ]] && ANON="Anonymous "
@@ -286,7 +319,7 @@ function get_oauth2_client_secrets(){
 
         1: "Run browser"
         2: Select "OAuth 2 authorization without a callback URL" and fill out the form.
-        3: Then, set the CLIENT_ID and CLIENT_SECRET in your settings.conf,
+        3: Then, set the CLIENT_ID and CLIENT_SECRET in your imgur.conf,
            or paste them in the fields below, and click "OK"
     '
     DLG=$($DIALOG --form --image=dialog-question --image-on-top \
@@ -322,7 +355,7 @@ function get_oauth2_client_secrets(){
         fi
     fi
 
-    # write credentials to settings.conf
+    # write credentials to imgur.conf
     # sed: change line containing <string> to <stringvar>
     C_ID_LINE="CLIENT_ID="\""${C_ID}\""
     C_SECRET_LINE="CLIENT_SECRET="\""${C_SECRET}\""
@@ -480,14 +513,14 @@ function fetch_account_info() {
 
     if (( $? == 0 )) && [[ $(jq -r .success <<<"${RESPONSE}") = "true" ]]; then
         USERNAME="$(jq -r .data.url <<<"${RESPONSE}")"
-        if [[ $1 == "getuser" ]];then   # user name not set in settings.conf
+        if [[ $1 == "getuser" ]];then   # user name not set in imgur.conf
             USER_NAME="${USERNAME,,}"
-            # write user name to settings.conf
+            # write user name to imgur.conf
             # sed: change line containing <string> to <stringvar>
             USER_LINE="USER_NAME="\""${USERNAME}\""
             sed -i "s/^USER_NAME.*/${USER_LINE}/" "${SETTINGS_FILE}"
             source "${SETTINGS_FILE}"
-            echo "User name ${USERNAME} written to settings.conf"
+            echo "User name ${USERNAME} written to imgur.conf"
             return
         fi
         MSG="\n\tLogged in as ${USERNAME}. \
@@ -539,7 +572,7 @@ OK="--button=OK:0"
 ######## END FUNCTIONS #################################################
 
 ### main ###############################################################
-settings_conf   # set up settings.conf if necessary
+settings_conf   # set up imgur.conf if necessary
 
 # set defaults, if login not specified in script args
 ID="${ANON_ID}"
@@ -567,6 +600,8 @@ elif ! . "${CREDENTIALS_FILE}" 2> /dev/null; then
     fi
 fi
 
+check_required  # check required programs are installed
+
 getargs "${@}"
 getimage "${FNAME}"
 
@@ -574,7 +609,7 @@ if [[ "${AUTH_MODE}" = "L" ]];then        # logged in as user
     check_oauth2_client_secrets
     load_access_token
     if ! [[ -z "${ALBUM_TITLE}" ]];then   # upload to specified album
-        if [[ -z "${USER_NAME}" ]];then   # need to get user name, and write to settings.conf  
+        if [[ -z "${USER_NAME}" ]];then   # need to get user name, and write to imgur.conf  
             fetch_account_info getuser
         fi
         ## get album id
