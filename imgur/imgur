@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-################### imgur.sh ###########################################
+# imgthunar
+################### imgur ###########################################
 # Take screenshots and upload them to Imgur.
 # This can be to an existing account, or anonymously.
 #
@@ -42,6 +43,7 @@ read -d '' USAGE <<EOF
   -a, --album <album_title>    Upload to specified album
   -t, --title <image title>    Label uploaded image
   --file  <filepath/filename>  Upload specified image. Overrides scrot options
+  --thunar                     Upload image from filemanager, put BBCode on clipboard 
   
   The final dialog displays forum BB-Code for both the direct image link and
   the linked image thumbnail. These can be copy/pasted as desired.
@@ -52,7 +54,7 @@ EOF
 
 ### required programs ###
 declare -a APPS
-APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" )
+APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" "xclip" )
 
 
 ### Get script args ####################################################
@@ -103,6 +105,8 @@ function getargs(){
                             shift
                             F_FLAG=1
                             ;;
+            --thunar)       THUNAR=1
+                            ;;
                          *) MSG="\n\tFailed to parse options\n\tExiting script...\n"
                             echo -e "${MSG}" >&2
                             yad_error "${MSG}"
@@ -151,6 +155,7 @@ source "${SETTINGS_FILE}"
 ### Check required programs are installed ###
 function check_required(){
     local message
+    VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
     declare -a BAD_APPS # array to hold missing commands
     APPS+=( "${VIEWER}" )
     
@@ -679,28 +684,34 @@ else
     
     BB_DIRECT="[img]${IMG_LINK}[/img]"
     BB_THUMB_LINKED="[url=${IMG_LINK}][img]${IMG_THUMB}[/img][/url]"
-    
-    # download image thumbnail, for display in YAD dialog
-    TEMP_THUMB="${HOME}/tmp/thumb.jpg"
-    wget -q -O "${TEMP_THUMB}" "${IMG_THUMB}"
-    
-    # Display BB Codes for uploaded image, and tidy up
-    TEXT="\tBB Code - Image thumbnail Linked \n
-    \tUse Ctrl-C/Ctrl-V to copy/paste the selection \n"
-    
-    RET=$(${DIALOG} --image-on-top --image="${TEMP_THUMB}" "${TITLE}" \
-        --form \
-        --field="BB Code - Thumbnail linked":TXT "${BB_THUMB_LINKED}" \
-        --field="BB Code - Direct image link":TXT "${BB_DIRECT}" \
-        ${DELETE} ${CLOSE}  --width=680 ${T}"${TEXT}" --text-align=left)
-    RET="$?"
-    if (( RET == 2 ));then    
-        if [[ $AUTH_MODE == "A" ]];then
-            delete_image "${DEL_HASH}"
-        else
-            delete_image "${IMG_ID}"
+
+    if (( THUNAR == 0 ));then     # is just the code on the clipboard wanted?
+        # download image thumbnail, for display in YAD dialog
+        TEMP_THUMB="${HOME}/tmp/thumb.jpg"
+        wget -q -O "${TEMP_THUMB}" "${IMG_THUMB}"
+        
+        # Display BB Codes for uploaded image, and tidy up
+        TEXT="\tBB Code - Image thumbnail Linked \n
+        \tUse Ctrl-C/Ctrl-V to copy/paste the selection \n"
+        
+        RET=$(${DIALOG} --image-on-top --image="${TEMP_THUMB}" "${TITLE}" \
+            --form \
+            --field="BB Code - Thumbnail linked":TXT "${BB_THUMB_LINKED}" \
+            --field="BB Code - Direct image link":TXT "${BB_DIRECT}" \
+            ${DELETE} ${CLOSE}  --width=680 ${T}"${TEXT}" --text-align=left)
+        RET="$?"
+        if (( RET == 2 ));then    
+            if [[ $AUTH_MODE == "A" ]];then
+                delete_image "${DEL_HASH}"
+            else
+                delete_image "${IMG_ID}"
+            fi
+            rm "${TEMP_THUMB}"
         fi
-        rm "${TEMP_THUMB}"
+    else
+        echo "${BB_THUMB_LINKED}" | xclip
+        echo "${BB_THUMB_LINKED}" | xclip -selection clipboard
+        notify-send "BBCode on clipboard"
     fi
 fi
 
