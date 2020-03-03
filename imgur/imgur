@@ -155,9 +155,7 @@ source "${SETTINGS_FILE}"
 ### Check required programs are installed ###
 function check_required(){
     local message
-    #VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
     declare -a BAD_APPS # array to hold missing commands
-    #APPS+=( "${VIEWER}" )
     
     for app in "${APPS[@]}";do
         if type "${app}" >/dev/null 2>&1;then
