@@ -5,7 +5,7 @@
 #
 # Credentials for an account can be set up.
 #
-# Settings (imgbb.conf) file is created in $HOME/.config/imgbb
+# Settings (imgbb.conf) file is created in $HOME/.config/image-upload/imgbb
 #
 # The script returns BB-Code for the direct image link, and a linked thumbnail.
 # YAD dialogs are used for user interaction.
@@ -34,10 +34,30 @@
 export API_URL="https://api.imgbb.com/"   # used by run_browser()
 
 export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes' 
-USR_CFG_DIR="$HOME/.config/image-upload"
+USR_CFG_DIR="$HOME/.config/image-upload/imgbb"
 SETTINGS_FILE="${USR_CFG_DIR}/imgbb.conf"
 SCRIPT=$(basename "$0")
 export IMG_VIEWER="x-www-browser"   # used by show_image()
+
+read -d '' USAGE <<EOF
+  imgbb [option]... [file]...
+
+  With no script args, ${SCRIPT} will upload a screenshot of
+  the full desktop, as anonymous user
+  
+  -h, --help                   Show this help, exit
+  -s, --select                 Take screenshot in select mode
+  -w, --window                 Take screenshot in active window mode
+  -f, --full                   Take screenshot in full desktop mode
+  -d, --delay <seconds>        Delay in integer seconds, before taking screenshot
+  --file  <filepath/filename>  Upload specified image. Overrides scrot options
+  
+  The final dialog displays forum BB-Code for both the direct image link and
+  the linked image thumbnail. These can be copy/pasted as desired.
+
+  Options to delete uploaded and/or local screenshot images before exiting script.
+
+EOF
 
 #### YAD ###
 DIALOG="yad --center --borders=20 --window-icon=distributor-logo-bunsenlabs --fixed"
