@@ -105,7 +105,7 @@ function getargs(){
                             shift
                             F_FLAG=1
                             ;;
-            --thunar)       THUNAR=1
+            --auto-upload)  THUNAR=1
                             ;;
                          *) MSG="\n\tFailed to parse options\n\tExiting script...\n"
                             echo -e "${MSG}" >&2
@@ -708,7 +708,7 @@ else
         fi
     else                    # just the BBCode on the clipboard is wanted.
         echo "${BB_THUMB_LINKED}" | xsel -i     # for middle-mouse paste
-        echo "${BB_THUMB_LINKED}" | xsel -b     # for ctrl-V/Paste
+        echo "${BB_THUMB_LINKED}" | xsel -ib     # for ctrl-V/Paste
         notify-send "BBCode on clipboard"
     fi
 fi
