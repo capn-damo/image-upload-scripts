@@ -1,22 +1,40 @@
 #!/bin/bash
 #
-################### imgur ###########################################
-# Take screenshots and upload them to Imgur.
-# This can be to an existing account, or anonymously.
+#   bl-imgur: script to take screenshots and upload them to Imgur; this
+#   can be to an existing account, or anonymously.
 #
-# Credentials and access token for an account can be set up.
+#   Credentials and an access token for an account can be set up.
 #
-# Settings (imgur.conf) and credentials (credentials.conf}) files are created in \
-# $HOME/.config/image-upload/imgur/
+#   Settings (imgur.conf) and credentials (credentials.conf}) files are created in
+#   ${HOME}/.config/image-upload/imgur/
 #
-# The script returns BB-Code for the direct image link, and a linked thumbnail.
-# YAD dialogs are used for user interaction.
+#   The script returns BB-Code for the direct image link, and a linked thumbnail.
+#   YAD dialogs are used for user interaction.
 #
-# Kudos to the writer of the script at https://github.com/jomo/imgur-screenshot,
-# which has provided most of the OAuth2 and Imgur API functions adapted here.
-# ("imgur-screenshot" is featured in https://imgur.com/tools.)
+#   There is an option to upload a file directly from the file manager, and the
+#   BBCode placed on the clipboard.
 #
-# Copyright (C) 2019 damo    <damo@bunsenlabs.org>
+#   Kudos to the writer of the script at https://github.com/jomo/imgur-screenshot,
+#   which has provided most of the OAuth2 and Imgur API functions adapted here.
+#   ("imgur-screenshot" is featured in https://imgur.com/tools.)
+#
+########################################################################
+#
+#   Copyright (C) 2020 damo    <damo@bunsenlabs.org>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 ########################################################################
 
 BL_COMMON_LIBDIR='/usr/lib/bunsen/common'
@@ -219,7 +237,6 @@ function getimage(){
 }
 
 function delete_image() {
-    #"https://api.imgur.com/3/image/$1"
 
     local IMG="$1"
     if [[ ${AUTH_MODE} == "L" ]];then
@@ -262,7 +279,7 @@ function delete_local(){
         if type "/usr/bin/gio" > /dev/null;then # 'gio' is part of 'gvfs' package
             gio trash "${IMG_FILE}"
         else
-            rm "${IMG_FILE}"
+            rm -f "${IMG_FILE}"
         fi
     fi
 }
@@ -375,7 +392,7 @@ function load_access_token() {
     if [[ ${ID} == "${ANON_ID}" ]];then # user has used '-l' or '-c' args, without credentials
         MSG="\n\tSorry, you need to Register an Imgur account\n\tbefore being able to log in!\n"
         echo -e "${MSG}"
-        yad_error "${MSG}" #&& exit
+        yad_error "${MSG}" 
         get_oauth2_client_secrets
     else
         AUTH_MODE="L"
@@ -459,7 +476,7 @@ EOF
 }
 
 function save_access_token() {
-    # create dir if not exist
+    # create dir if not existing
     mkdir -p "$(dirname "${CREDENTIALS_FILE}")" 2>/dev/null
     touch "${CREDENTIALS_FILE}" && chmod 600 "${CREDENTIALS_FILE}"
     cat <<EOF > "${CREDENTIALS_FILE}"
@@ -585,7 +602,7 @@ F_FLAG=0        # Flag for local image file upload
 SCROT="${SCREENSHOT_FULL_COMMAND}"        
 DATETIME=$(date +%s) && echo "time= ${DATETIME}"
 
-export -f run_browser   # to be used as YAD button command
+export -f run_browser       # to be used as YAD button command
 export -f switch_to_browser # used by run_browser
 
 if ! . "${BL_COMMON_LIBDIR}/yad-includes" 2> /dev/null; then
@@ -664,7 +681,7 @@ if (( ${PIPE[0]} != 0 ));then # PIPESTATUS shows curl command failed
 
             delete_image "${RECENT_ID}"
             delete_local
-            rm "${TEMP_THUMB}"
+            rm -f "${TEMP_THUMB}"
             exit
         else
             echo "image not found"
@@ -704,11 +721,11 @@ else
             else
                 delete_image "${IMG_ID}"
             fi
-            rm "${TEMP_THUMB}"
+            rm -f "${TEMP_THUMB}"
         fi
     else                    # just the BBCode on the clipboard is wanted.
         echo "${BB_THUMB_LINKED}" | xsel -i     # for middle-mouse paste
-        echo "${BB_THUMB_LINKED}" | xsel -ib     # for ctrl-V/Paste
+        echo "${BB_THUMB_LINKED}" | xsel -ib    # for ctrl-V/Paste
         notify-send "BBCode on clipboard"
     fi
 fi
