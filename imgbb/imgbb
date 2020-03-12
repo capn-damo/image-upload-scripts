@@ -1,17 +1,19 @@
 #!/bin/bash
 ##
-################### imgbb ###########################################
+################### bl-imgbb-upload ####################################
 # Take screenshots and upload them to imgbb.
 #
 # Credentials for an account can be set up.
 #
-# Settings (imgbb.conf) file is created in $HOME/.config/image-upload/imgbb
+# Settings file (imgbb.conf) is created in $HOME/.config/image-upload/imgbb
 #
 # The script returns BB-Code for the direct image link, and a linked thumbnail.
 # YAD dialogs are used for user interaction.
 #
 ########################################################################
-# Copyright (C) 2019 damo   <damo.linux@gmail.com>
+#
+#    Copyright (C) 2020 damo    <damo@bunsenlabs.org>
+#
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -24,43 +26,53 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 ########################################################################
 #
-### REQUIRES:  yad, jq, xprop, wmctrl, wget, curl, scrot, xdotool,
-#               convert(in imagemagick package), gio(in gvfs package)
+### REQUIRES:  yad, jq, xprop, wmctrl, wget, curl, scrot, xdotool, convert
 #
 ########################################################################
 
 export API_URL="https://api.imgbb.com/"   # used by run_browser()
-
-export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes' 
+export BL_YAD_INCLUDES='/usr/lib/bunsen/common/yad-includes'
+export IMG_VIEWER   # used by show_image()
+ 
 USR_CFG_DIR="$HOME/.config/image-upload/imgbb"
 SETTINGS_FILE="${USR_CFG_DIR}/imgbb.conf"
 SCRIPT=$(basename "$0")
-export IMG_VIEWER="x-www-browser"   # used by show_image()
-
-read -d '' USAGE <<EOF
-  imgbb [option]... [file]...
+THUMB_SIZE=250                      # Thumbnail to be 250px wide
+KEEP_BB=1                           # Flag to keep BBCode on clipboard
+TEST=0                              # Flag for '--test-account' parameter
+USAGE="bl-imgbb-upload [option]... [file]...
 
   With no script args, ${SCRIPT} will upload a screenshot of
-  the full desktop, as anonymous user
-  
+  the full desktop.
+
+  The first use will ask for a client API key, by logging in or registering
+  for a new account.
+
   -h, --help                   Show this help, exit
   -s, --select                 Take screenshot in select mode
   -w, --window                 Take screenshot in active window mode
   -f, --full                   Take screenshot in full desktop mode
   -d, --delay <seconds>        Delay in integer seconds, before taking screenshot
   --file  <filepath/filename>  Upload specified image. Overrides scrot options
-  
+  --test-account               For use by external script to see if user
+                               has an imgbb Client ID configured
+
   The final dialog displays forum BB-Code for both the direct image link and
   the linked image thumbnail. These can be copy/pasted as desired.
 
-  Options to delete uploaded and/or local screenshot images before exiting script.
+  There are options to delete uploaded and/or local screenshot images
+  before exiting the script.
 
-EOF
+  If more than one of '-f','-w', or '-s' are passed to the script, the LAST
+  one will be used.
+
+"
 
 #### YAD ###
-DIALOG="yad --center --borders=20 --window-icon=distributor-logo-bunsenlabs --fixed"
+DIALOG="yad --center --borders=20 --window-icon=distributor-logo-bunsenlabs"
 TITLE="--title=Image BBCode"
 T="--text="
 DELETE="--button=Delete:2"
@@ -70,14 +82,14 @@ OK="--button=OK:0"
 
 ### required programs ###
 declare -a APPS
-APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "gio" "xdotool" "convert" )
+APPS=( "yad" "xprop" "wmctrl" "wget" "curl" "scrot" "xdotool" "convert" )
 
 ### FUNCTIONS  #########################################################
 ### Get script args ###
 function getargs(){
     while [[ ${#} != 0 ]]; do
         case "$1" in
-            -h | --help)    echo -e "\n${USAGE}\n"
+            -h | --help)    echo -e "\n${USAGE}"
                             exit 0
                             ;;
             -s | --select)  SCROT="${SCREENSHOT_SELECT_COMMAND}"
@@ -97,8 +109,15 @@ function getargs(){
                             shift
                             ;;
             --file)         FNAME="$2"
+                            if [[ -z "${FNAME}" ]];then
+                                echo "'--file': requires a filename..." >&2
+                                notify_msg "'--file': requires a filename..."
+                                exit 1
+                            fi
                             shift
                             F_FLAG=1
+                            ;;
+            --test-account) TEST=1  # to test if user has Imgur account
                             ;;
                          *) message="\n\tFailed to parse options\n\tExiting script...\n"
                             echo -e "${message}" >&2
@@ -109,6 +128,7 @@ function getargs(){
         shift
     done
 }
+
 ### Initialize imgbb.conf config  ###
 function settings_conf(){
     ! [[ -d "${USR_CFG_DIR}" ]] && mkdir -p "${USR_CFG_DIR}" 2>/dev/null
@@ -120,16 +140,17 @@ function settings_conf(){
 ### Read by ${SCRIPT} ###################
 # Most of these settings can be overridden with script args
 
-# Imgbb settings
+# imgbb settings
 CLIENT_API_KEY=""
-IMG_VIEWER=""
+IMG_VIEWER="bl-image-viewer"
+IMG_EDITOR=""
 
 # Local file settings
 # User directory to save image:
-FILE_DIR="$(xdg-user-dir PICTURES)"
+FILE_DIR="$(xdg-user-dir PICTURES)/screenshots"
 FILE_NAME="imgbb-%Y_%m_%d-%H:%M:%S"
 # possible formats are png | jpg | tif | gif | bmp | webp
-FILE_FORMAT="jpg"   
+FILE_FORMAT="png"
 
 # Screenshot scrot commands
 SCREENSHOT_SELECT_COMMAND="scrot -s"
@@ -140,63 +161,43 @@ EOF
     fi
     source "${SETTINGS_FILE}"
 }
-### Check required programs are installed ###
-function check_required(){
-    local message
-    declare -a BAD_APPS # array to hold missing commands
-    APPS+=( "${VIEWER}" )
-    
-    for app in "${APPS[@]}";do
-        if type "${app}" >/dev/null 2>&1;then
-            continue
-        else
-            echo >&2 "${app} not installed."
-            BAD_APPS+=( "${app}" )
-        fi
+# Check for availability of commands used in script.
+function declareDependencies(){     # adapted from bl-includes
+    # Usage: declareDependencies command [command...]
+    local missing_commands=()
+    i=
+    for i in "$@"
+    do
+        hash "$i" 2>/dev/null || missing_commands+=(" $i")
     done
-    
-    if (( ${#BAD_APPS[@]} > 0 ));then
-        message="\n  You need to install\n"
-        for app in "${BAD_APPS[@]}";do
-            message="${message}  "\'"${app}"\'","
-        done
-        message="${message}\n  before proceeding.\n"
-        echo -e "${message}"
-        yad_error "${message}"
+
+    if [[ ${missing_commands[0]} ]];then
+        ERR_MSG="
+            This script requires the following commands:
+
+                ${missing_commands[*]}
+
+            Please install the packages containing the missing commands
+            and re-run the script.
+            "
+        yad_error "${ERR_MSG}"
         exit
-    fi
+    fi 
 }
 
 ### File and Image functions ###
 function getimage(){
     local message ret
-    if ! [[ -z ${DELAY} ]] 2>/dev/null && ! [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]] 2>/dev/null;then
+    if ! [[ -z ${DELAY} ]] && ! [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]];then
         SCROT="${SCROT} -d ${DELAY} "
-        message="\n\tNo image file provided...\n\tProceed with screenshot?\n \
-        \n\tThere will be a pause of ${DELAY}s, to select windows etc\n"
-    elif [[ ${DELAY} ]] 2>/dev/null && [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]] 2>/dev/null;then
+    elif [[ ${DELAY} ]] && [[ ${SCROT} == "${SCREENSHOT_SELECT_COMMAND}" ]];then
         yad_error "\n\tUse '-d' (delay) or '-s' (select area), not both together.\n\n\tExiting script...\n"
         exit
     else
         DELAY=0
         SCROT="${SCROT} -d 1 "   # need a pause so YAD dialog can leave the scene
-        message="\n\tNo image file provided...\n\tProceed with screenshot?\n"
     fi
-    if [[ -z "$1" ]] 2>/dev/null; then
-        yad_common_args+=("--image=dialog-question")
-        yad_question "${message}"
-        ret="$?"
-        yad_common_args+=("--image=0")
-        yad_common_args+=("--image=dialog-info")
-        if (( ret == 1 ));then
-            exit 0
-        elif (( ret == 0 )) && [[ ${SCROT} == *"-s"* ]];then            # scrot command contains "-s" to select area
-            yad_info "\n\tDrag cursor to select area for screenshot\n"  
-        elif (( ret == 0 )) && [[ ${SCROT} == *"-u"* ]];then            # scrot command contains "-u" for active window
-            yad_info "\n\tDouble-click on window\n\twanted for the screenshot\n"       
-            SCROT="${SCROT//-u/-s}"                                      # swap '-u' to '-s'
-        fi
-        yad_common_args+=("--image=0")
+    if [[ -z "$1" ]]; then
         # new filename with date
         img_file="$(date +"${FILE_NAME}.${FILE_FORMAT}")"
         img_file="${FILE_DIR}/${img_file}" && export img_file
@@ -205,81 +206,80 @@ function getimage(){
         # upload file instead of screenshot
         img_file="$1"
     fi
-    
+
     # check if file exists
-    if ! [[ -f "${img_file}" ]] 2>/dev/null; then
+    if ! [[ -f "${img_file}" ]]; then
         message="\n\tfile '${img_file}' doesn't exist!\n\n\tExiting script...\n"
         echo -e "${message}"
         yad_error "${message}"
         exit 1
     fi
-    # make thumbnail for dialog icon
-    make_thumbnail "${img_file}"
+    make_thumbnail "${img_file}"     # make thumbnail for dialog icon
 }
 
 function make_thumbnail(){
     local img="$1"
     local img_name img_dirpath
-    
+
     img_name="$(basename "${img}")"
     img_dirpath="$(dirname "${img}")"
     thumbnail="${img_dirpath}/th_${img_name}"
 
-    convert "${img}" -resize 150 "${img_dirpath}/th_${img_name}"
-}
-
-function delete_image() {   # Open imgbb at image to be deleted
-    x-www-browser "${del_url}"
-    switch_to_active
+    convert "${img}" -resize ${THUMB_SIZE} "${img_dirpath}/th_${img_name}"
 }
 
 function delete_local(){    # delete local screenshot; don't delete if '--file' was script arg.
-    local message ret
+    local message msg ret
     source "${BL_YAD_INCLUDES}"
-    
-    if (( F_FLAG == 0));then    # local file wasn't uploaded, so don't offer to delete
+
+    if (( F_FLAG == 0));then    # local file wasn't uploaded, so don't offer to delete it
         message="\n\tMove local screenshot image to 'Trash'?\n\n\t${img_file}\n"
-        yad_common_args+=("--image=dialog-question")
-        yad_question "${message}"
+        yad_question "--image=dialog-question" "${message}"
         ret="$?"
-        yad_common_args+=("--image=0")
-        
+
         if (( ret == 0 )); then
-            if type "/usr/bin/gio" > /dev/null;then # 'gio' is part of 'gvfs' package
-                gio trash "${img_file}"
+            if gio trash "${img_file}" >/dev/null;then # send to 'Wastebasket'
                 gio trash "${thumbnail}"
             else
-                rm "${img_file}"
-                rm "${thumbnail}"
+                rm -f "${img_file}"
+                rm -f "${thumbnail}"
             fi
+            msg="\tLocal screenshot deleted:\n\n\t\"${img_file}\"\n"
         else
-            rm "${thumbnail}"   # Presumably we don't want to keep temporary thumbnail
+            rm -f "${thumbnail}"   # Presumably we don't want to keep temporary thumbnail
         fi
     else
-        rm "${thumbnail}"   # Delete file upload thumbnail
+        rm -f "${thumbnail}"   # Delete file upload thumbnail
     fi
+    notify_msg "${msg}"
+    rm -f "${thumb_tempfile}"
 }
 
 function take_screenshot() {
-    local cmd_scrot shot_err message
+    local cmd_scrot shot_err message msg
     cmd_scrot="${SCROT}$1"
-    msg1="\nCountdown to screenshot from ${DELAY} seconds\n \
-(There may be a few seconds of inactivity\n \
-while the screenshot takes place.\n"
+    msg="
+    Countdown to screenshot from ${DELAY} seconds   
+    (There may be a few seconds of inactivity   
+    while the screenshot takes place.   "
 
     if (( DELAY > 1 ));then       
         if echo "${cmd_scrot}" | grep -w "\-d" &>/dev/null;then     # show countdown indicator
-            yad --image=dialog-info --center --undecorated --borders=20 --fixed --sticky \
-                --window-icon=distributor-logo-bunsenlabs \
+            ${DIALOG} --image=dialog-information --undecorated  \
                 --timeout=${DELAY} --timeout-indicator=bottom \
-                --text="${msg1}" \
+                --text="${msg}" \
                 ${CANCEL}
-                (( $? == 1 )) && exit
+            (( $? == 1 )) && exit
         fi
     fi 
     shot_err="$( (${cmd_scrot} >&2) 2>&1)" #takes a screenshot
     if (( $? != 0 )); then
-        message="\n\tFailed to take screenshot of\n\t$1:\n\n\tError: '${shot_err}'\n"
+        message="
+        Failed to take screenshot of
+        $1
+
+        Error: '${shot_err}'
+        "
         echo -e "${message}"
         yad_error "${message}"
         exit 1
@@ -288,24 +288,23 @@ while the screenshot takes place.\n"
 
 function show_image(){  # display image using viewer set in imgbb.conf
     # if image viewer not set, then default to browser
-    [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
-    ${VIEWER} "${img_file}"
-    switch_to_active
+    [[ -z "${IMG_VIEWER}" ]] && IMG_VIEWER="x-www-browser"
+    ${IMG_VIEWER} "${img_file}"
 }
 
-function image_resize(){ # Reduce image size to 10%-90% of original
+function image_resize(){
+    # Reduce image size to 10%-90% of original, or
+    # Increase image size by 10%-300%
     local img="$1"
     local message
-    
+
     if ! [[ -f "${img}" ]];then
         err_msg="\nCan't find ${img}\n"
         echo -e "${err_msg}"
         yad_error "${err_msg}"
         exit 1
-    else
-        img_size=$(du -h "${img}" | awk '{print $1}')
     fi
-    
+
     img_name="$(basename "${img}")"
     img_dirpath="$(dirname "${img}")"
     dlg=$(yad --form --undecorated --on-top --borders=20 \
@@ -321,7 +320,7 @@ function image_resize(){ # Reduce image size to 10%-90% of original
     ans=$?
     reduce=$(echo "${dlg}" | awk -F '|' '{print $1}')
     enlarge=$(echo "${dlg}" | awk -F '|' '{print $2}')
-    
+
     if (( ans == 0 ));then
         resize=${reduce}
     elif (( ans == 2 ));then
@@ -331,7 +330,8 @@ function image_resize(){ # Reduce image size to 10%-90% of original
         temp_file=$(mktemp --tmpdir resize.XXX) # stores curl output for use by ${response}
         resize_cmd="convert ${img} -resize ${resize}% ${img_file}"
         message='
-    Resizing image
+        Resizing image...
+
         '
 set -x # needed so progress bar shows
         eval "${resize_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
@@ -358,15 +358,15 @@ function watermark_thumb() {    # add watermark to thumbnail if uploaded image h
     convert  -background transparent -fill red -size 160x60 label:'UPLOAD\n     DELETED' "${delete_text}"
     # overlay thumbnail with watermark
     composite -dissolve 50% -gravity west "${delete_text}" "${thumb_tempfile}" "${thumb_tempfile}"
-    
-    rm "${delete_text}"
+
+    rm -f "${delete_text}"
 }
 ### END Image Functions ################################################
 
 function get_client_api_key(){
     local curr_desktop message dlg ans dlg_msg dlg_err
-    
-    curr_desktop=$(xdotool get_desktop) # get Desktop index, so we can return to it
+
+    curr_desktop=$(xdotool get_desktop)             # get Desktop index, so we can return to it
     message='
         You need to Register or log in to your imgbb account to get an API Key.
 
@@ -374,7 +374,7 @@ function get_client_api_key(){
         2.  Create account or Sign in, then return to the API page ("About">>"API").
         3.  "Get API key" and copy/paste it into the dialog entry field.
         4.  Choose "OK".
-        
+
     '
     dlg=$(${DIALOG} --form --image=dialog-question --image-on-top \
     --title="imgbb Client API key" --text="${message}" \
@@ -389,8 +389,9 @@ function get_client_api_key(){
     [[ ${ans} == 1 ]] && exit 0
     CLIENT_API_KEY="$(echo "${dlg}" | awk -F '|' '{print $1}')" # 'pipe' separators
 
-    # check returned values
-    if [[ -z "${CLIENT_API_KEY}" ]] || (( ${#CLIENT_API_KEY} != 32 )) || ! [[ ${CLIENT_API_KEY} =~ ^[a-fA-F0-9]+$ ]];then
+    # check returned values: API key must be 32 chars long, containing 'aA-fF' or '0-9'
+    if [[ -z "${CLIENT_API_KEY}" ]] || (( ${#CLIENT_API_KEY} != 32 )) \
+        || ! [[ ${CLIENT_API_KEY} =~ ^[a-fA-F0-9]+$ ]];then
         err_msg="Client API key is wrong!"
     fi
     if [[ ${err_msg} ]]; then
@@ -411,30 +412,18 @@ function get_client_api_key(){
     api_line="CLIENT_API_KEY="\""${CLIENT_API_KEY}\""
     sed -i "s/^CLIENT_API_KEY.*/${api_line}/" "${SETTINGS_FILE}"
     source "${SETTINGS_FILE}"
-    
-    xdotool key ctrl+w  # close current tab, and return to original desktop
+
+    xdotool key ctrl+shift+w  # close browser window
     xdotool set_desktop "${curr_desktop}"
-
 }
-function run_browser(){     # run browser with API url, and switch to attention-seeking browser tab
+
+function run_browser(){     # run browser with API url, or user's account
     local api_call="$1"     # function called from button in dialog
-    if [[ ${api_call} = "addclient" ]]; then
-        x-www-browser "${API_URL}" 2>/dev/null
+    if [[ ${api_call} = "addclient" ]]; then        # get client API key
+        x-www-browser --new-window "${API_URL}" &
     else
-        x-www-browser "$1" 2>/dev/null
+        x-www-browser --new-window "${api_call}" &  # open image url
     fi
-    switch_to_active
-}
-
-function switch_to_active(){   # switch to new browser tab
-    local id
-    for id in $(wmctrl -l | awk '{ print $1 }'); do
-        # filter only windows demanding attention 
-        xprop -id "$id" | grep -q "_NET_WM_STATE_DEMANDS_ATTENTION"
-        if (( $? == 0 )); then
-            wmctrl -i -a "$id"
-        fi
-    done
 }
 
 function upload_image(){
@@ -442,12 +431,12 @@ function upload_image(){
     curl_cmd="curl -s --location --request POST https://api.imgbb.com/1/upload?key=${CLIENT_API_KEY} \
     --form image=@${img_file}"
     local message='
-    
-      Uploading screenshot to imgbb...
-      
+    Uploading screenshot to imgbb...
+
     '
+
     # Run curl command passed as first arg; write output to tempfile; pipe to yad --progress
-set -x  # needed so pulsate progress displays. for some reason
+set -x  # needed so pulsate progress displays, for some reason
     eval "${curl_cmd}" 2>&1 > "${temp_file}" | yad --progress --pulsate --auto-close \
     --progress-text="${message}" \
     --undecorated --on-top --sticky --center \
@@ -456,49 +445,106 @@ set +x
     response=$(cat "${temp_file}")  # used by calling function
     rm -f "${temp_file}"
 
-    del_url="$(jq -r '.data.delete_url' <<< "${response}")" && export del_url   # used by delete_image()
+    del_url="$(jq -r '.data.delete_url' <<< "${response}")" 
     img_link="$(jq -r '.data.image.url' <<< "${response}")" && export img_link  # used by show_image()
     img_small="$(jq -r '.data.thumb.url' <<< "${response}")"
 
     bb_direct_link="[img]${img_link}[/img]"
     bb_thumb_linked="[url=${img_link}][img]${img_small}[/img][/url]"
-    
+
     # download image thumbnail, for display in YAD dialog
     thumb_tempfile="${HOME}/tmp/thumb.jpg"
     wget -q -O "${thumb_tempfile}" "${img_small}"
 
-    # Display BB Codes for uploaded image
-    text='
-        BB Code - Image thumbnail Linked
-
-        Use Ctrl-C/Ctrl-V to copy/paste the selection
-
-        '
+    KEEP_BB=1                               # Keep BBCodes on clipboard
+    notify_msg "BBCode placed on clipboard"
 }
 
 function return_to_desktop(){
     local curr_desktop="$1"
-    if [[ ${VIEWER} = "x-www-browser" ]];then
-        xdotool key ctrl+w  # close current tab
+    if [[ ${IMG_VIEWER} = "x-www-browser" ]];then
+        xdotool key ctrl+shift+w  # close browser window
     else
-        pkill -xf "${VIEWER} ${img_file}"
+        pkill -xf "${IMG_VIEWER} ${img_file}"
     fi
     xdotool set_desktop "${curr_desktop}"
 }
 
+function notify_msg(){      # for displaying notifications; add to or clear clipboard
+    local MSG="$1"
+    if (( KEEP_BB == 0 ));then  # uploaded file was deleted, clear clipboard
+        echo '' | xsel -i       # 'xsel -c' not working when clipboard manager in use :(
+        echo '' | xsel -ib
+    else
+        echo "${bb_thumb_linked}" | xsel -i     # for middle-mouse paste
+        echo "${bb_thumb_linked}" | xsel -ib    # for ctrl-V/Paste
+    fi
+    notify-send "$(echo -e ${MSG})"
+}
+
+### IMAGE EDITOR FUNCTIONS ###
+function run_editor(){          # run selected image editor
+    local img="$1"
+    if [[ -z "${IMG_EDITOR}" ]];then
+        set_editor
+    else
+        gimp "${img}"
+    fi
+    make_thumbnail "${img}"     # make new thumbnail
+    
+    TEXT="
+    <b>imgbb Screenshooter</b>
+
+    $(basename "${img_file}")
+    Filesize:${img_size}
+    (EDITED)
+    "
+}
+
+function set_editor(){          # set image editor
+    local ret
+    local txt="
+Enter name of editor or browse for the executable file
+
+"
+    
+    SET_DLG=$($DIALOG "${TITLE}" --entry --image="dialog-question" \
+        "${T}${txt}" \
+        --button="Browse:2" \
+        --button="OK:0" \
+        --button="Cancel:1" \
+        )
+    ret=$?
+    
+    case ${ret} in
+        0)  IMG_EDITOR="${SET_DLG}"     # edit SETTINGS_FILE with contents of entry box
+            sed -i 's|IMG_EDITOR=\"\"|IMG_EDITOR=\"'"${IMG_EDITOR}"'\"|' "${SETTINGS_FILE}"
+            source "${SETTINGS_FILE}"
+            ;;
+        2)  browse_editor           # browse for executable file of image editor
+            ;;
+    esac
+}
+
+function browse_editor(){           # browse for executable file of image editor
+    ED_DLG=$($DIALOG --file --filename="/usr/bin" 2>/dev/null) 
+    sed -i 's|IMG_EDITOR=\"\"|IMG_EDITOR=\"'"${ED_DLG}"'\"|' "${SETTINGS_FILE}"
+    source "${SETTINGS_FILE}"
+}
+
+### MAIN FUNCTION ###
 function main(){
     settings_conf   # set up imgbb.conf if necessary
 
     # set defaults
     SCROT="${SCREENSHOT_FULL_COMMAND}"        
-    VIEWER=$(grep -oP '(?<=VIEWER=").*(?=")' "${SETTINGS_FILE}")
+    IMG_VIEWER=$(grep -oP '(?<=IMG_VIEWER=").*(?=")' "${SETTINGS_FILE}")
+    TEST=0                      # Flag to test if user has Imgur account
+
+    export -f run_browser       # to be used in YAD button command
+    export -f show_image        # to be used in YAD button command
     
-    export -f run_browser       # to be used as YAD button command
-    export -f switch_to_active  # switch to active window
-    export -f show_image        # to be used as YAD button command
-    export VIEWER               # for use by show_image()
-    
-    [[ -z "${VIEWER}" ]] && VIEWER="x-www-browser"
+    [[ -z "${IMG_VIEWER}" ]] && IMG_VIEWER="x-www-browser"
 
     if ! . "${BL_YAD_INCLUDES}" 2> /dev/null; then
         echo "Error: Failed to source yad-includes in ${BL_YAD_INCLUDES}" >&2
@@ -507,18 +553,40 @@ function main(){
         echo "Error: Failed to source ${SETTINGS_FILE} in ${USR_CFG_DIR}/" >&2
         exit 1
     fi
-    
-    check_required  # check required programs are installed
-    
-    [[ -z "${CLIENT_API_KEY}" ]] && get_client_api_key
+
+    declareDependencies  "${APPS[@]}"    # see if system has the required commands installed
+
     getargs "${@}"
+    
+    # if '--test-account' was used: see if user has imgbb credentials, return exit code.
+    if (( TEST == 1 ));then
+        if [[ -z "${CLIENT_API_KEY}" ]];then
+            exit 1
+        else
+            exit 0
+        fi
+    fi
+    
+    # If no imgbb account has been set in SETTINGS_FILE, then register for API key
+    [[ -z "${CLIENT_API_KEY}" ]] && get_client_api_key
+
     getimage "${FNAME}"
-    # Option to show screenshot before uploading 
-    dtop="$(xdotool get_desktop)" 
+    img_size=$(du -h "${img_file}" | awk '{print $1}') # filesize for display in dialog text
+
+    dtop="$(xdotool get_desktop)"
+    
+    # Options to show or edit screenshot before uploading 
+    TEXT="
+    <b>imgbb Screenshooter</b>
+
+    $(basename "${img_file}")
+    Filesize:${img_size}
+    "
     while true;do
-        ${DIALOG} --undecorated --sticky --on-top --image=gtk-dialog-question --center \
+        ${DIALOG} --sticky --on-top --center "${TITLE}" \
         --image="${thumbnail}" \
-        --text="\n\t$(basename "${img_file}")\n" \
+        --text="${TEXT}" \
+        --button="Edit:5" \
         --button="Show screenshot:2" \
         --button="Resize image:3" \
         --button="Upload:4" \
@@ -535,6 +603,9 @@ function main(){
             4)  upload_image
                 break
                 ;;
+            5)  run_editor "${img_file}"
+                continue
+                ;;
             *)  delete_local
                 exit
                 ;;
@@ -546,7 +617,7 @@ function main(){
     while true;do
         if wget --spider "${del_url}" 2>/dev/null; then # page exists
             ret=$(${DIALOG} --image-on-top --image="${thumb_tempfile}" "${TITLE}" \
-                --width=680 ${T}"${text}" --text-align=left \
+                --width=680 ${T}"${TEXT}" --text-align=left \
                 --form \
                 --field='BB Code - Thumbnail linked':TXT "${bb_thumb_linked}" \
                 --field='BB Code - Direct image link':TXT "${bb_direct_link}" \
@@ -554,48 +625,48 @@ function main(){
                 ${DELETE} ${CLOSE} ) 2>/dev/null
             ret="$?"
             if (( ret == 2 )); then # block loop until image deletion is confirmed by user
-                yad_common_args+=("--on-top" "--image=dialog-info")
-                yad_info '
-                    Click "Delete image" below the image  
-                    on the imgbb page which will open.  
-                    
-                    Then choose  "Confirm"
-                    
-                    '
-                yad_common_args+=("--on-top=0" "--image=0")
                 curr_desktop=$(xdotool get_desktop) # get Desktop index, so we can return to it
-                delete_image
-                dlg=$(${DIALOG} --on-top --undecorated \
-                    ${T}"Choose 'OK' when you have confirmed image deletion" \
+                
+                # Open user's imgbb webpage with uploaded screenshot
+                x-www-browser --new-window "${del_url}" &
+
+                txt="
+    Choose 'OK' when you have confirmed image deletion
+
+    (the delete link is below the image)"
+    
+                dlg=$(${DIALOG} --on-top --undecorated --image="dialog-information" \
+                    ${T}"${txt}" \
                     ${OK} ${CANCEL} \
                     )
                 ret=$?
                 if (( ret == 0 ));then
-                    xdotool key ctrl+w  # close current tab, and resume loop
+                    xdotool key ctrl+shift+w  # close browser window, and resume loop
                     xdotool set_desktop "${curr_desktop}"
                     watermark_thumb
                     continue
                 else
-                    xdotool key ctrl+w  # close current tab, and resume loop
+                    xdotool key ctrl+shift+w  # close browser window, and resume loop
                     xdotool set_desktop "${curr_desktop}"
                     continue
                 fi
             else        # dialog 'Close' chosen
                 break
             fi
-        else    # Image deletion confirmed, but user may still want to copy/paste BBCode
-                # or view the image
+        else    # Image deletion confirmed, but user may still want to view the image
+            msg="
+    Screenshot was saved as
+    \"${img_file}\"
+
+    File size: ${img_size}
+    "
             ret=$(${DIALOG} --image-on-top --image="${thumb_tempfile}" "${TITLE}" \
-            --width=680 ${T}"${text}" --text-align=left \
-            --form \
-            --field='BB Code - Thumbnail linked':TXT "${bb_thumb_linked}" \
-            --field='BB Code - Direct image link':TXT "${bb_direct_link}" \
+            ${T}"${msg}" --text-align=left \
             --button="Show Image":"/bin/bash -c 'show_image'" \
             ${CLOSE}  \
             ) 2>/dev/null
             break
         fi
-        #break
     done
     delete_local
 }
